@@ -4,7 +4,6 @@ import "core:log"
 import "core:time"
 import gl "vendor:OpenGL"
 import "vendor:glfw"
-import "dd"
 
 WINDOW_WIDTH :: 480
 WINDOW_HEIGHT :: 480
@@ -45,7 +44,7 @@ main :: proc() {
 
     state.window_handle = create_window(WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT)
     width, height := glfw.GetWindowSize(state.window_handle)
-    state.window_size = dd.Vec2{f32(width), f32(height)}
+    state.window_size = Vec2{f32(width), f32(height)}
 
     glfw.MakeContextCurrent(state.window_handle)
     load_opengl()

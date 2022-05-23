@@ -1,4 +1,4 @@
-package dd
+package gary
 
 import "core:log"
 import gl "vendor:OpenGL"
@@ -6,7 +6,7 @@ import "core:math/linalg"
 
 Shader :: u32
 
-shader_from_source :: proc(vertex_src: ^cstring, frag_src: ^cstring) -> u32 {
+shader_from_source :: proc(vertex_src: ^cstring, frag_src: ^cstring) -> Shader {
     vertex := gl.CreateShader(gl.VERTEX_SHADER)
     defer gl.DeleteShader(vertex)
     gl.ShaderSource(vertex, 1, vertex_src, nil)
@@ -70,6 +70,6 @@ shader_report_compilation_error :: proc(shader: Shader) {
     gl.GetShaderiv(shader, gl.COMPILE_STATUS, &success)
     if (success == 0) {
         gl.GetShaderInfoLog(shader, 512, nil, &message[0])
-        log.errorf("SHADER::ERROR::PANIC: %s\n", message)
+        log.errorf("Shader error: %s\n", message)
     }
 }

@@ -6,30 +6,37 @@ import "core:math"
 import "core:math/linalg"
 import "core:runtime"
 import "core:math/rand"
-import "vendor:stb/image"
+import "core:image/png"
+import "core:c"
 
 import "vendor:glfw"
+import "vendor:stb/image"
 import gl "vendor:OpenGL"
-import "dd"
+import "gary"
+
+Vec2 :: gary.Vec2
+Vec3 :: gary.Vec3
+Color :: gary.Color
 
 DEBUG_EVENTS :: false
 
-CAMERA_SIZE :: 5.0
+GRID_WIDTH  :: 10
+GRID_HEIGHT :: 10
+GRID_SIZE   :: Vec2{GRID_WIDTH, GRID_HEIGHT}
+UNIT_SIZE   :: Vec2{1.0, 1.0}
+CAMERA_SIZE :: 6
 
-GRID_WIDTH :: 8
-GRID_HEIGHT :: 8
-GRID_SIZE :: dd.Vec2{GRID_WIDTH, GRID_HEIGHT}
+COLOR_DARK       :: Color{0.2, 0.2, 0.2, 1.0}
+COLOR_LIGHT_DARK :: Color{0.4, 0.4, 0.4, 1.0}
+COLOR_YELLOW     :: Color{0.98, 0.753, 0.231, 1.0}
+COLOR_RED        :: Color{0.98, 0.353, 0.231, 1.0}
+COLOR_WHITE      :: Color{1.0, 1.0, 1.0, 1.0}
 
-COLOR_DARK :: dd.Color{0.2, 0.2, 0.2, 1.0}
-COLOR_LIGHT_DARK :: dd.Color{0.4, 0.4, 0.4, 1.0}
-COLOR_YELLOW :: dd.Color{0.98, 0.753, 0.231, 1.0}
-COLOR_RED :: dd.Color{0.98, 0.353, 0.231, 1.0}
-
-PLAYER_MOVE_TIME :: 0.3
+PLAYER_MOVE_TIME  :: 0.2
 PLAYER_HEAD_COLOR :: COLOR_YELLOW
-PLAYER_TAIL_COLOR :: dd.Color{0.3, 0.6, 0.2, 1.0}
+PLAYER_TAIL_COLOR :: Color{0.3, 0.6, 0.2, 1.0}
 
-Event_Kind :: enum {
+Event_Kind :: enum u8 {
     KEY_UP,
     KEY_DOWN,
     KEY_REPEAT,
@@ -52,11 +59,11 @@ Kek :: union {
     Window_Resized_Event,
 }
 
-check_out_of_bounds :: proc(pos, min, max: dd.Vec2) -> bool {
+check_out_of_bounds :: proc(pos, min, max: Vec2) -> bool {
     return pos.x < min.x || pos.y < min.y || pos.x >= max.x || pos.y >= max.y
 }
 
-check_position :: proc(a, b: dd.Vec2) -> bool {
+check_position :: proc(a, b: Vec2) -> bool {
     return a.x == b.x && a.y == b.y
 }
 
@@ -94,7 +101,7 @@ glfw_resized :: proc "cdecl" (window: glfw.WindowHandle, width, height: i32) {
     context = runtime.default_context()
     state := cast(^Game_State)glfw.GetWindowUserPointer(window)
     gl.Viewport(0, 0, width, height)
-    state.window_size = dd.Vec2{f32(width), f32(height)}
+    state.window_size = Vec2{f32(width), f32(height)}
 
     state.camera.projection = create_camera_projection(state.camera.size, state.window_size.x,
         state.window_size.y)
@@ -102,7 +109,7 @@ glfw_resized :: proc "cdecl" (window: glfw.WindowHandle, width, height: i32) {
 
 glfw_mouse_moved :: proc "c" (window: glfw.WindowHandle, x, y: f64) {
     state := cast(^Game_State)glfw.GetWindowUserPointer(window)
-    state.mouse_position = dd.Vec2{f32(x) / WINDOW_WIDTH, f32(-y) / WINDOW_HEIGHT}
+    state.mouse_position = Vec2{f32(x) / WINDOW_WIDTH, f32(-y) / WINDOW_HEIGHT}
 }
 
 init :: proc(state: ^Game_State) {
@@ -149,7 +156,7 @@ create_camera_projection :: proc(size, width, height: f32) -> linalg.Matrix4f32 
 
 camera_get_transform :: proc(camera: ^Camera) -> linalg.Matrix4f32 {
     transform := linalg.matrix4_translate(
-        dd.Vec3{camera.position.x, camera.position.y, 0.0},
+        Vec3{camera.position.x, camera.position.y, 0.0},
     )
     transform = linalg.matrix4_rotate_f32(camera.rotation, {0, 0, 1}) * linalg.matrix4_inverse_f32(
                    transform)
@@ -161,23 +168,83 @@ game_init :: proc(state: ^Game_State) {
     init(state)
     glfw.SwapInterval(-1)
 
-    state.drawing_context = dd.draw_init()
+    state.drawing_context = gary.init()
 
-    state.camera.size = 6.0
-    state.camera.projection = create_camera_projection(state.camera.size, state.window_size.x,
+    state.camera.size = CAMERA_SIZE
+    state.camera.projection = create_camera_projection(
+        state.camera.size,
+        state.window_size.x,
         state.window_size.y)
-    state.camera.position = dd.Vec2{0, 0}
+    state.camera.position = Vec2{0, 0}
     state.camera.rotation = 0.0
-    state.next_apple = GRID_SIZE - dd.Vec2{1, 1}
+    state.next_apple = GRID_SIZE - Vec2{1, 1}
+
+    // width, height, channels: c.int
+    // data := image.load("game.png", &width, &height, &channels, 0)
+    // if data != nil {
+    //     log.info(data)
+    //     state.image = gary.load_texture(int(width), int(height), int(channels), data)
+    // } else {
+    //     log.error("Failed to load image")
+    // }
+    // options := png.Options{.blend_background}
+
+    if image, err := png.load_from_bytes(#load("../../assets/snake_head.png")); err == nil {
+        log.infof("Channels: %v", image.channels)
+        state.snake_texture = gary.load_texture(image.width, image.height, image.channels, raw_data(image.pixels.buf))
+        // delete(image.pixels.buf)
+    } else {
+        log.error(err)
+    }
+
+    if image, err := png.load_from_bytes(#load("../../assets/apple.png")); err == nil {
+        log.infof("Channels: %v", image.channels)
+        state.apple_texture = gary.load_texture(image.width, image.height, image.channels, raw_data(image.pixels.buf))
+        // delete(image.pixels.buf)
+    } else {
+        log.error(err)
+    }
 }
 
 game_deinit :: proc(state: ^Game_State) {
+    gary.deinit(&state.drawing_context)
 }
 
 game_main_loop :: proc(state: ^Game_State) -> Run_State {
     ret := update(state)
     render(state)
     return ret
+}
+
+update_player :: proc(state: ^Game_State) -> Run_State {
+    old_pos := state.player.position
+    state.player.position += state.player.direction
+
+    for piece in &state.player.tail {
+        if check_position(state.player.position, piece) {
+            return .Stop
+        }
+    }
+
+    if check_out_of_bounds(state.player.position, {0.0, 0.0}, GRID_SIZE) {
+        state.player.position = old_pos
+        log.infof("Score: %v", len(state.player.tail))
+        return .Stop
+    }
+
+    if check_position(state.player.position, state.next_apple) {
+        append(&state.player.tail, Vec2{})
+        state.next_apple = Vec2 {
+            f32(rand.int31() % GRID_WIDTH),
+            f32(rand.int31() % GRID_HEIGHT),
+        }
+    }
+
+    previous_pos := old_pos
+    for piece in &state.player.tail {
+        previous_pos, piece = piece, previous_pos
+    }
+    return .Continue
 }
 
 update :: proc(state: ^Game_State) -> Run_State {
@@ -210,80 +277,63 @@ update :: proc(state: ^Game_State) -> Run_State {
     if state.running_time - state.previous_move_time > PLAYER_MOVE_TIME {
         state.previous_move_time = state.running_time
 
-        old_pos := state.player.position
-        state.player.position += state.player.direction
-
-        for piece in &state.player.tail {
-            if check_position(state.player.position, piece) {
-                return .Stop
-            }
-        }
-
-        if check_out_of_bounds(state.player.position, {0.0, 0.0}, GRID_SIZE) {
-            state.player.position = old_pos
+        if update_player(state) != .Continue {
             return .Stop
-        }
-
-        if check_position(state.player.position, state.next_apple) {
-            append(&state.player.tail, dd.Vec2{})
-            state.next_apple = dd.Vec2 {
-                f32(rand.int31() % GRID_WIDTH),
-                f32(rand.int31() % GRID_HEIGHT),
-            }
-        }
-
-        previous_pos := old_pos
-        for piece in &state.player.tail {
-            previous_pos, piece = piece, previous_pos
-            // temp := piece
-            // piece = previous_pos
-            // previous_pos = temp
         }
     }
 
     return .Continue
 }
 
-UNIT_SIZE :: dd.Vec2{1.0, 1.0}
-
 render :: proc(state: ^Game_State) {
-    glfw.SetWindowTitle(
-        state.window_handle,
-        cast(cstring)raw_data(fmt.tprintf("Delta: %v", state.delta)))
+    // I use bspwm on linux so the titlebar is not visible
+    when ODIN_OS == .Windows {
+        glfw.SetWindowTitle(
+            state.window_handle,
+            cast(cstring)raw_data(fmt.tprintf("Delta: %v", state.delta)))
+    }
 
-    dd.draw_begin(
+    gary.draw_begin(
         &state.drawing_context,
         camera_get_transform(&state.camera),
-        dd.Color{0.1, 0.1, 0.1, 1})
+        Color{0.1, 0.1, 0.1, 1})
 
     for x in 0 ..< GRID_WIDTH {
         for y in 0 ..< GRID_HEIGHT {
-            position := dd.Vec2{f32(x), f32(y)} - GRID_SIZE / 2 + UNIT_SIZE / 2
-            dd.draw_quad(
+            position := Vec2{f32(x), f32(y)} - GRID_SIZE / 2 + UNIT_SIZE / 2
+            gary.draw_quad(
                 ctx = &state.drawing_context,
                 position = position,
-                color = (x + y) % 2 == 0 ? COLOR_DARK : COLOR_LIGHT_DARK)
+                color = ((x + y) % 2 == 0) ? COLOR_DARK : COLOR_LIGHT_DARK)
         }
     }
 
     for piece in state.player.tail {
-        dd.draw_quad(
+        gary.draw_quad(
             &state.drawing_context,
             piece + UNIT_SIZE / 2 - GRID_SIZE / 2, 0.0, PLAYER_TAIL_COLOR)
     }
-    dd.draw_quad(
+
+    gary.draw_texture(
         &state.drawing_context,
+        state.snake_texture,
         state.player.position + UNIT_SIZE / 2 - GRID_SIZE / 2, 0.0, PLAYER_HEAD_COLOR)
 
-    dd.draw_quad(
+    gary.draw_texture(
         &state.drawing_context,
-        state.next_apple + UNIT_SIZE / 2 - GRID_SIZE / 2, 0.0, COLOR_RED)
+        state.apple_texture,
+        state.next_apple + UNIT_SIZE / 2 - GRID_SIZE / 2, 0.0)
 
     // NOTE(minebill): This would be cool to do
-    // dd.draw_text(
-    //     &state.drawing_context,
-    //     "KEKW PEPEGAS",
-    // )
+    gary.draw_string(
+        &state.drawing_context,
+        Vec2{0.0, 0.0},
+        fmt.tprintf("Score: %v", len(state.player.tail)),
+    )
 
-    dd.draw_end()
+    gary.draw_string(
+        &state.drawing_context,
+        Vec2{0, 1},
+        fmt.tprintf("Draw calls: %v", state.drawing_context.draw_calls),
+    )
 }
