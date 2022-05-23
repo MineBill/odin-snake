@@ -184,25 +184,25 @@ draw_string :: proc(
 
     gl.UseProgram(ctx.font_shader)
 
-    w, h := i32(ctx.font_atlas.img.width), i32(ctx.font_atlas.img.height)
-    xpos, ypos: f32
-    quad: ttf.aligned_quad
-
     shader_uniform_vec4(ctx.font_shader, "Color", color)
     vbo: u32
     gl.GenBuffers(1, &vbo)
     defer gl.DeleteBuffers(1, &vbo)
     gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
-    gl.BufferData(gl.ARRAY_BUFFER, 4 * 6 * size_of(f32), nil, gl.DYNAMIC_DRAW)
+    buffer_size := len(text) * 4 * 6 * size_of(f32)
+    gl.BufferData(gl.ARRAY_BUFFER, buffer_size, nil, gl.DYNAMIC_DRAW)
 
     gl.EnableVertexAttribArray(0)
     gl.VertexAttribPointer(0, 4, gl.FLOAT, false, size_of(f32) * 4, 0)
 
+    w, h := i32(ctx.font_atlas.img.width), i32(ctx.font_atlas.img.height)
+    xpos, ypos: f32
+    quad: ttf.aligned_quad
     // NOTE(minebill): This is really stupid,
     // i'm only doing this to fix some weird highlighting in my
     // editor.
     t := text
-    for r in &t {
+    for r, index in &t {
         chardata := ctx.font_atlas.chardata[r]
 
         ttf.GetPackedQuad(
@@ -216,8 +216,6 @@ draw_string :: proc(
 
         uv_tl := Vec2{quad.s0, quad.t1}
         uv_br := Vec2{quad.s1, quad.t0}
-        // uv_tl := Vec2{0, 0}
-        // uv_br := Vec2{1, 1}
 
         x0 := quad.x0 / FONT_SCALE
         y0 := (ypos - (ypos + quad.y1)) / FONT_SCALE
@@ -235,9 +233,9 @@ draw_string :: proc(
             x0, y0, uv_tl.x, uv_tl.y, // Top Left
         }
 
-        // FIXME(minebill): Maybe batch all of the letters into one draw call
-        gl.BufferSubData(gl.ARRAY_BUFFER, 0, len(vertices) * size_of(f32), &vertices)
-        gl.DrawArrays(gl.TRIANGLES, 0, 6)
-        ctx.draw_calls += 1
+        offset := index * len(vertices) * size_of(f32)
+        gl.BufferSubData(gl.ARRAY_BUFFER, offset, len(vertices) * size_of(f32), &vertices)
     }
+    gl.DrawArrays(gl.TRIANGLES, 0, 6 * i32(len(text)))
+    ctx.draw_calls += 1
 }
