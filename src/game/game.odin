@@ -324,7 +324,6 @@ render :: proc(state: ^Game_State) {
         state.apple_texture,
         state.next_apple + UNIT_SIZE / 2 - GRID_SIZE / 2, 0.0)
 
-    // NOTE(minebill): This would be cool to do
     gary.draw_string(
         &state.drawing_context,
         Vec2{0.0, 0.0},

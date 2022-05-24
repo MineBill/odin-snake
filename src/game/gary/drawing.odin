@@ -10,10 +10,11 @@ import "core:c"
 
 Vec2 :: linalg.Vector2f32
 Vec3 :: linalg.Vector3f32
-Vec2i :: [2]i32
-Vec3i :: [3]i32
 Vec4 :: linalg.Vector4f32
 Color :: Vec4
+
+Vec2i :: [2]i32
+Vec3i :: [3]i32
 
 VERTEX_SRC           := cstring(#load("vertex.glsl"))
 SIMPLE_FRAGMENT_SRC  := cstring(#load("fragment.glsl"))
