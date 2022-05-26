@@ -19,9 +19,9 @@ Player :: struct {
 
 Game_State :: struct {
     window_handle:      glfw.WindowHandle,
-    drawing_context:    gary.Drawing_Context,
     mouse_position:     Vec2,
-    camera:             Camera,
+    game_camera:        Camera,
+    ui_camera:          Camera,
     window_size:        Vec2,
     player:             Player,
     events:             [dynamic]Event,

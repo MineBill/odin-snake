@@ -25,6 +25,7 @@ GRID_HEIGHT :: 10
 GRID_SIZE   :: Vec2{GRID_WIDTH, GRID_HEIGHT}
 UNIT_SIZE   :: Vec2{1.0, 1.0}
 CAMERA_SIZE :: 6
+UI_CAMERA_SIZE :: CAMERA_SIZE
 
 COLOR_DARK       :: Color{0.2, 0.2, 0.2, 1.0}
 COLOR_LIGHT_DARK :: Color{0.4, 0.4, 0.4, 1.0}
@@ -103,21 +104,18 @@ glfw_resized :: proc "cdecl" (window: glfw.WindowHandle, width, height: i32) {
     gl.Viewport(0, 0, width, height)
     state.window_size = Vec2{f32(width), f32(height)}
 
-    state.camera.projection = create_camera_projection(state.camera.size, state.window_size.x,
+    state.game_camera.projection = create_camera_projection(state.game_camera.size, state.window_size.x,
         state.window_size.y)
+    state.ui_camera.projection = create_orthographic_projection(
+        0, state.window_size.x,
+        0, state.window_size.y,
+        -1, 1,
+    )
 }
 
 glfw_mouse_moved :: proc "c" (window: glfw.WindowHandle, x, y: f64) {
     state := cast(^Game_State)glfw.GetWindowUserPointer(window)
     state.mouse_position = Vec2{f32(x) / WINDOW_WIDTH, f32(-y) / WINDOW_HEIGHT}
-}
-
-init :: proc(state: ^Game_State) {
-    glfw.SetWindowUserPointer(state.window_handle, state)
-
-    glfw.SetKeyCallback(state.window_handle, glfw_key)
-    glfw.SetWindowSizeCallback(state.window_handle, glfw_resized)
-    glfw.SetCursorPosCallback(state.window_handle, glfw_mouse_moved)
 }
 
 create_orthographic_projection :: proc "contextless" (
@@ -165,29 +163,36 @@ camera_get_transform :: proc(camera: ^Camera) -> linalg.Matrix4f32 {
 
 game_init :: proc(state: ^Game_State) {
     log.info("Initializing game stuff")
-    init(state)
+    glfw.SetWindowUserPointer(state.window_handle, state)
+    glfw.SetKeyCallback(state.window_handle, glfw_key)
+    glfw.SetWindowSizeCallback(state.window_handle, glfw_resized)
+    glfw.SetCursorPosCallback(state.window_handle, glfw_mouse_moved)
+
     glfw.SwapInterval(-1)
 
-    state.drawing_context = gary.init()
+    gary.init()
 
-    state.camera.size = CAMERA_SIZE
-    state.camera.projection = create_camera_projection(
-        state.camera.size,
-        state.window_size.x,
-        state.window_size.y)
-    state.camera.position = Vec2{0, 0}
-    state.camera.rotation = 0.0
+    state.game_camera = Camera {
+        size = CAMERA_SIZE,
+        projection = create_camera_projection(
+            CAMERA_SIZE,
+            state.window_size.x,
+            state.window_size.y,
+        ),
+        position = Vec2{0, 0},
+        rotation = 0.0,
+    }
+
+    state.ui_camera = Camera {
+        size = UI_CAMERA_SIZE,
+        projection = create_orthographic_projection(
+            0, state.window_size.x,
+            0, state.window_size.y,
+            -1, 1,
+        ),
+    }
+
     state.next_apple = GRID_SIZE - Vec2{1, 1}
-
-    // width, height, channels: c.int
-    // data := image.load("game.png", &width, &height, &channels, 0)
-    // if data != nil {
-    //     log.info(data)
-    //     state.image = gary.load_texture(int(width), int(height), int(channels), data)
-    // } else {
-    //     log.error("Failed to load image")
-    // }
-    // options := png.Options{.blend_background}
 
     if image, err := png.load_from_bytes(#load("../../assets/snake_head.png")); err == nil {
         log.infof("Channels: %v", image.channels)
@@ -207,7 +212,8 @@ game_init :: proc(state: ^Game_State) {
 }
 
 game_deinit :: proc(state: ^Game_State) {
-    gary.deinit(&state.drawing_context)
+    delete(state.events)
+    gary.deinit()
 }
 
 game_main_loop :: proc(state: ^Game_State) -> Run_State {
@@ -258,81 +264,142 @@ update :: proc(state: ^Game_State) -> Run_State {
         case .KEY_DOWN:
             old_pos := state.player.position
             switch event.key {
+
             case glfw.KEY_W:
-                state.player.direction = {0, 1}
-            case glfw.KEY_S:
-                state.player.direction = {0, -1}
-            case glfw.KEY_D:
-                state.player.direction = {1, 0}
-            case glfw.KEY_A:
-                state.player.direction = {-1, 0}
-            case glfw.KEY_ESCAPE:
-                glfw.SetWindowShouldClose(state.window_handle, true)
+            state.player.direction = {0, 1}
+            if update_player(state) != .Continue {
+                return .Stop
+
             }
+
+            case glfw.KEY_S:
+            state.player.direction = {0, -1}
+            if update_player(state) != .Continue {
+                return .Stop
+            }
+
+            case glfw.KEY_D:
+            state.player.direction = {1, 0}
+            if update_player(state) != .Continue {
+                return .Stop
+            }
+
+            case glfw.KEY_A:
+            state.player.direction = {-1, 0}
+            if update_player(state) != .Continue {
+                return .Stop
+            }
+
+            case glfw.KEY_ESCAPE:
+            glfw.SetWindowShouldClose(state.window_handle, true)
+        }
         }
     }
 
     state.running_time += state.delta
 
-    if state.running_time - state.previous_move_time > PLAYER_MOVE_TIME {
-        state.previous_move_time = state.running_time
+    // if state.running_time - state.previous_move_time > PLAYER_MOVE_TIME {
+    //     state.previous_move_time = state.running_time
 
-        if update_player(state) != .Continue {
-            return .Stop
-        }
-    }
+    //     if update_player(state) != .Continue {
+    //         return .Stop
+    //     }
+    // }
 
     return .Continue
 }
 
 render :: proc(state: ^Game_State) {
+    using state
+    using gary
     // I use bspwm on linux so the titlebar is not visible
     when ODIN_OS == .Windows {
         glfw.SetWindowTitle(
-            state.window_handle,
-            cast(cstring)raw_data(fmt.tprintf("Delta: %v", state.delta)))
+            window_handle,
+            cast(cstring)raw_data(fmt.tprintf("Delta: %v", delta)))
     }
 
-    gary.draw_begin(
-        &state.drawing_context,
-        camera_get_transform(&state.camera),
-        Color{0.1, 0.1, 0.1, 1})
+    draw_clear(Color{0.1, 0.1, 0.1, 1.0})
+    draw_begin(
+        camera_get_transform(&game_camera),
+    )
 
     for x in 0 ..< GRID_WIDTH {
         for y in 0 ..< GRID_HEIGHT {
             position := Vec2{f32(x), f32(y)} - GRID_SIZE / 2 + UNIT_SIZE / 2
-            gary.draw_quad(
-                ctx = &state.drawing_context,
+            draw_quad(
                 position = position,
                 color = ((x + y) % 2 == 0) ? COLOR_DARK : COLOR_LIGHT_DARK)
         }
     }
 
     for piece in state.player.tail {
-        gary.draw_quad(
-            &state.drawing_context,
+        draw_quad(
             piece + UNIT_SIZE / 2 - GRID_SIZE / 2, 0.0, PLAYER_TAIL_COLOR)
     }
 
-    gary.draw_texture(
-        &state.drawing_context,
-        state.snake_texture,
-        state.player.position + UNIT_SIZE / 2 - GRID_SIZE / 2, 0.0, PLAYER_HEAD_COLOR)
+    player_draw_pos := player.position + UNIT_SIZE / 2 - GRID_SIZE / 2
+    draw_texture(
+        snake_texture,
+        player_draw_pos, 0.0, PLAYER_HEAD_COLOR)
 
-    gary.draw_texture(
-        &state.drawing_context,
-        state.apple_texture,
-        state.next_apple + UNIT_SIZE / 2 - GRID_SIZE / 2, 0.0)
+    draw_string_absolute(
+        player_draw_pos,
+        "Player",
+        0.0,
+        COLOR_RED,
+        Vec2{1, 1} / 32,
+    )
 
-    gary.draw_string(
-        &state.drawing_context,
-        Vec2{0.0, 0.0},
+    draw_texture(
+        apple_texture,
+        next_apple + UNIT_SIZE / 2 - GRID_SIZE / 2, 0.0)
+
+
+    draw_begin(camera_get_transform(&ui_camera))
+
+    draw_string_absolute(
+        Vec2{0, 0},
         fmt.tprintf("Score: %v", len(state.player.tail)),
     )
 
-    gary.draw_string(
-        &state.drawing_context,
-        Vec2{0, 1},
-        fmt.tprintf("Draw calls: %v", state.drawing_context.draw_calls),
+    draw_string(
+        Vec2{0.5, 0.5},
+        "Relative",
+        window_size,
+        .CENTER,
     )
+
+    text := "Absolute String"
+    draw_string_absolute(
+        // Vec2{
+        //     0,
+        //     0,
+        // },
+        Vec2{
+            window_size.x - measure_text(text),
+            window_size.y - f32(ctx.font_atlas.max_rune_size.y),
+        },
+        text,
+    )
+
+    text = "KEKWKEKWKEKW"
+    draw_string_absolute(
+        Vec2{window_size.x - measure_text(text), 0},
+        text,
+    )
+
+    // draw_quad_points(
+    //     position = Vec2{0, 0},
+    //     points = []f32{
+    //         0, 0, 0,
+    //         1, 1, 0,
+    //         1, 0, 0,
+    //         0, 0, 0,
+    //         0, 1, 0,
+    //         1, 1, 0,
+    //     },
+    //     scale = Vec2{1, 1},
+    //     color = COLOR_RED,
+    // )
 }

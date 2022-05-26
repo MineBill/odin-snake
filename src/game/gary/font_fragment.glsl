@@ -10,5 +10,5 @@ void main()
 {
     vec4 sampled = vec4(1.0, 1.0, 1.0, texture(Atlas, TextureCoords).r);
     FragColor = FColor * sampled;
-    // FragColor = texture(Atlas, TextureCoords) * FColor;
+    /* FragColor = FColor; */
 }
