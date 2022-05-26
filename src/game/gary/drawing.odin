@@ -26,11 +26,13 @@ FONT_FRAGMENT_SRC    := cstring(#load("font_fragment.glsl"))
 FONT_SCALE :: 32
 
 Text_Align :: enum {
-    CENTER,
-    TOP_LEFT,
-    TOP_RIGHT,
-    BOTTOM_LEFT,
-    BOTTOM_RIGHT,
+    Center,
+    Top_Center,
+    Bottom_Center,
+    Top_Left,
+    Top_Right,
+    Bottom_Left,
+    Bottom_Right,
 }
 
 Drawing_Context :: struct {
@@ -210,7 +212,7 @@ draw_quad_points :: proc(
     gl.EnableVertexAttribArray(0)
     gl.VertexAttribPointer(0, 3, gl.FLOAT, false, size_of(f32) * 3, 0)
 
-    gl.DrawArrays(gl.TRIANGLES, 0, i32(len(points)))
+    gl.DrawArrays(gl.TRIANGLES, 0, i32(len(points) / 3))
     ctx.draw_calls += 1
 }
 
@@ -287,11 +289,11 @@ draw_string_absolute :: proc(
     ctx.draw_calls += 1
 }
 
-draw_string :: proc(
+draw_string_relative :: proc(
     position: Vec2,
     text: string,
     screen: Vec2,
-    text_align: Text_Align = .BOTTOM_LEFT,
+    text_align: Text_Align = .Bottom_Left,
     rotation: f32 = 0.0,
     color: Color = Color{1.0, 1.0, 1.0, 1.0},
     scale: Vec2 = Vec2 {1, 1},
@@ -303,18 +305,30 @@ draw_string :: proc(
     pos := screen * position
     switch text_align {
         // Do nothing
-        case .BOTTOM_LEFT: unreachable("Not implemented")
-        case .BOTTOM_RIGHT:
+        case .Bottom_Left:
+        case .Bottom_Right:
         pos.x -= width
-        case .TOP_LEFT:    unreachable("Not implemented")
-        case .TOP_RIGHT:   unreachable("Not implemented")
-        case .CENTER:
+        case .Top_Left:
+        pos.y -= height
+        case .Top_Right:   unreachable("Not implemented")
+        case .Center:
         pos.x -= width / 2
+        pos.y -= height / 4
+        case .Top_Center:
+        pos.x -= width / 2
+        pos.y -= height
+        case .Bottom_Center:
     }
+
     draw_string_absolute(pos, text, rotation, color, scale)
 }
 
-measure_text :: proc(s: string) -> (width: f32) {
+draw_string :: proc {
+    draw_string_absolute,
+    draw_string_relative,
+}
+
+measure_text :: proc(s: string) -> (width: f32 = 0.0) {
     // FIXME(minebill): Remove this
     ss := s
     for char in &ss {

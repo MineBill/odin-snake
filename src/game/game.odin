@@ -13,6 +13,7 @@ import "vendor:glfw"
 import "vendor:stb/image"
 import gl "vendor:OpenGL"
 import "gary"
+import "gary/ui"
 
 Vec2 :: gary.Vec2
 Vec3 :: gary.Vec3
@@ -358,48 +359,24 @@ render :: proc(state: ^Game_State) {
 
     draw_begin(camera_get_transform(&ui_camera))
 
-    draw_string_absolute(
-        Vec2{0, 0},
-        fmt.tprintf("Score: %v", len(state.player.tail)),
+    draw_quad_points(
+        position = Vec2{0, 0},
+        points = []f32{
+            0, 0, 0,
+            1, 1, 0,
+            1, 0, 0,
+            0, 0, 0,
+            0, 1, 0,
+            1, 1, 0,
+        },
+        scale = Vec2{1, 1},
+        color = COLOR_RED,
     )
 
     draw_string(
-        Vec2{0.5, 0.5},
-        "Relative",
+        Vec2{0.5, 1},
+        fmt.tprintf("Score: %v", len(state.player.tail)),
         window_size,
-        .CENTER,
+        Text_Align.Top_Center,
     )
-
-    text := "Absolute String"
-    draw_string_absolute(
-        // Vec2{
-        //     0,
-        //     0,
-        // },
-        Vec2{
-            window_size.x - measure_text(text),
-            window_size.y - f32(ctx.font_atlas.max_rune_size.y),
-        },
-        text,
-    )
-
-    text = "KEKWKEKWKEKW"
-    draw_string_absolute(
-        Vec2{window_size.x - measure_text(text), 0},
-        text,
-    )
-
-    // draw_quad_points(
-    //     position = Vec2{0, 0},
-    //     points = []f32{
-    //         0, 0, 0,
-    //         1, 1, 0,
-    //         1, 0, 0,
-    //         0, 0, 0,
-    //         0, 1, 0,
-    //         1, 1, 0,
-    //     },
-    //     scale = Vec2{1, 1},
-    //     color = COLOR_RED,
-    // )
 }
