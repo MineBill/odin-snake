@@ -41,7 +41,7 @@ NUM_FONTS :: 1
 fonts: [NUM_FONTS]Font
 
 font_names := [NUM_FONTS]string{
-    "../assets/JetBrainsMono-Regular.ttf",
+    "../assets/Kenney Future.ttf",
 }
 
 get_all_unique_runes_to_load :: proc() {
