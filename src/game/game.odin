@@ -17,6 +17,7 @@ import "gary/ui"
 
 Vec2 :: gary.Vec2
 Vec3 :: gary.Vec3
+Rect :: gary.Vec4
 Color :: gary.Color
 
 DEBUG_EVENTS :: false
@@ -39,34 +40,45 @@ PLAYER_HEAD_COLOR :: COLOR_YELLOW
 PLAYER_TAIL_COLOR :: Color{0.3, 0.6, 0.2, 1.0}
 
 Event_Kind :: enum u8 {
-    KEY_UP,
-    KEY_DOWN,
-    KEY_REPEAT,
+    Key_Up,
+    Key_Down,
+    Key_Repeat,
 
-    WINDOW_RESIZED,
+    Window_Resized,
+
+    Mouse_Button_Down,
+    Mouse_Button_Up,
 }
 
 Event :: struct {
-    kind: Event_Kind,
-    key:  int,
+    kind:   Event_Kind,
+    key:    int,
+    button: int,
 }
 
-Key_Event :: struct {
-    key: int,
-}
-Window_Resized_Event :: struct {}
+// Helpers
 
-Kek :: union {
-    Key_Event,
-    Window_Resized_Event,
-}
-
-check_out_of_bounds :: proc(pos, min, max: Vec2) -> bool {
+rect_intersects :: proc(pos, min, max: Vec2) -> bool {
     return pos.x < min.x || pos.y < min.y || pos.x >= max.x || pos.y >= max.y
 }
 
 check_position :: proc(a, b: Vec2) -> bool {
     return a.x == b.x && a.y == b.y
+}
+
+hex_to_rgb :: proc(hex: int) -> Color {
+    r := f32((hex >> 16) & 0x0000FF) / 255.0
+    g := f32((hex >> 8) & 0x0000FF) / 255.0
+    b := f32((hex & 0x0000FF)) / 255.0
+    return Color {r, g, b, 1.0}
+}
+
+color_darken :: proc(color: Color, percent: f32) -> Color {
+    unimplemented()
+}
+
+color_lighten :: proc(color: Color, percent: f32) -> Color {
+    unimplemented()
 }
 
 // glfw events
@@ -79,23 +91,21 @@ glfw_key :: proc "cdecl" (window: glfw.WindowHandle, key, scancode, action, mods
     switch action {
         case glfw.PRESS:
         append(&state.events, Event{
-            kind = .KEY_DOWN,
+            kind = .Key_Down,
             key = int(key),
         })
         case glfw.RELEASE:
         append(&state.events, Event{
-            kind = .KEY_UP,
+            kind = .Key_Up,
             key = int(key),
         })
         case glfw.REPEAT:
         append(&state.events, Event{
-            kind = .KEY_REPEAT,
+            kind = .Key_Repeat,
             key = int(key),
         })
     }
 }
-
-What :: []i32{1, 2}
 
 glfw_resized :: proc "cdecl" (window: glfw.WindowHandle, width, height: i32) {
     // NOTE(minebill): Maybe this is not needed? 
@@ -109,7 +119,7 @@ glfw_resized :: proc "cdecl" (window: glfw.WindowHandle, width, height: i32) {
         state.window_size.y)
     state.ui_camera.projection = create_orthographic_projection(
         0, state.window_size.x,
-        0, state.window_size.y,
+        state.window_size.y, 0,
         -1, 1,
     )
 }
@@ -117,6 +127,25 @@ glfw_resized :: proc "cdecl" (window: glfw.WindowHandle, width, height: i32) {
 glfw_mouse_moved :: proc "c" (window: glfw.WindowHandle, x, y: f64) {
     state := cast(^Game_State)glfw.GetWindowUserPointer(window)
     state.mouse_position = Vec2{f32(x) / WINDOW_WIDTH, f32(-y) / WINDOW_HEIGHT}
+    ui.global_ui_state.mouse = Vec2{f32(x), f32(y)}
+}
+
+glfw_mouse_button :: proc "c" (window: glfw.WindowHandle, button, action, mods: i32)  {
+    context = runtime.default_context()
+    state := cast(^Game_State)glfw.GetWindowUserPointer(window)
+
+    switch action {
+        case glfw.PRESS:
+        append(&state.events, Event{
+            kind = .Mouse_Button_Down,
+            button = int(button),
+        })
+        case glfw.RELEASE:
+        append(&state.events, Event{
+            kind = .Mouse_Button_Up,
+            button = int(button),
+        })
+    }
 }
 
 create_orthographic_projection :: proc "contextless" (
@@ -145,8 +174,8 @@ create_camera_projection :: proc(size, width, height: f32) -> linalg.Matrix4f32 
     projection := create_orthographic_projection(
         -aspect * size,
         aspect * size,
-        -size,
         size,
+        -size,
         -1.0,
         1.0,
     )
@@ -168,6 +197,7 @@ game_init :: proc(state: ^Game_State) {
     glfw.SetKeyCallback(state.window_handle, glfw_key)
     glfw.SetWindowSizeCallback(state.window_handle, glfw_resized)
     glfw.SetCursorPosCallback(state.window_handle, glfw_mouse_moved)
+    glfw.SetMouseButtonCallback(state.window_handle, glfw_mouse_button)
 
     glfw.SwapInterval(-1)
 
@@ -188,7 +218,7 @@ game_init :: proc(state: ^Game_State) {
         size = UI_CAMERA_SIZE,
         projection = create_orthographic_projection(
             0, state.window_size.x,
-            0, state.window_size.y,
+            state.window_size.y, 0,
             -1, 1,
         ),
     }
@@ -233,7 +263,7 @@ update_player :: proc(state: ^Game_State) -> Run_State {
         }
     }
 
-    if check_out_of_bounds(state.player.position, {0.0, 0.0}, GRID_SIZE) {
+    if rect_intersects(state.player.position, {0.0, 0.0}, GRID_SIZE) {
         state.player.position = old_pos
         log.infof("Score: %v", len(state.player.tail))
         return .Stop
@@ -262,19 +292,19 @@ update :: proc(state: ^Game_State) -> Run_State {
         }
 
         #partial switch event.kind {
-        case .KEY_DOWN:
+        case .Key_Down:
             old_pos := state.player.position
             switch event.key {
 
             case glfw.KEY_W:
-            state.player.direction = {0, 1}
+            state.player.direction = {0, -1}
             if update_player(state) != .Continue {
                 return .Stop
 
             }
 
             case glfw.KEY_S:
-            state.player.direction = {0, -1}
+            state.player.direction = {0, 1}
             if update_player(state) != .Continue {
                 return .Stop
             }
@@ -294,6 +324,14 @@ update :: proc(state: ^Game_State) -> Run_State {
             case glfw.KEY_ESCAPE:
             glfw.SetWindowShouldClose(state.window_handle, true)
         }
+        case Event_Kind.Mouse_Button_Down:
+            if event.button == glfw.MOUSE_BUTTON_LEFT {
+                ui.global_ui_state.mouse_down = true
+            }
+        case Event_Kind.Mouse_Button_Up:
+            if event.button == glfw.MOUSE_BUTTON_LEFT {
+                ui.global_ui_state.mouse_up = true
+            }
         }
     }
 
@@ -375,8 +413,24 @@ render :: proc(state: ^Game_State) {
 
     draw_string(
         Vec2{0.5, 1},
-        fmt.tprintf("Score: %v", len(state.player.tail)),
+        fmt.tprintf("Mouse: %v", ui.global_ui_state.mouse),
         window_size,
         Text_Align.Top_Center,
     )
+
+    ui.start()
+
+    ui.window(3, "Pepega Settings")
+
+    if ui.button(1, "Move Apple", Vec2{100, 100}) {
+        state.next_apple = Vec2 {
+            f32(rand.int31() % GRID_WIDTH),
+            f32(rand.int31() % GRID_HEIGHT),
+        }
+    }
+
+    ui.window(4, "Hello")
+
+    ui.end()
 }
+

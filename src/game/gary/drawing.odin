@@ -50,7 +50,7 @@ ctx: Drawing_Context
 
 init :: proc() {
     gl.Enable(gl.CULL_FACE)
-    gl.CullFace(gl.FRONT)
+    gl.CullFace(gl.BACK)
 
     gl.Enable(gl.BLEND)
     gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
@@ -60,8 +60,8 @@ init :: proc() {
     font_shader    := shader_from_source(&FONT_VERTEX_SRC, &FONT_FRAGMENT_SRC)
 
     t := Vec4 {
-        +0.0, +0.0, // Bottom Left
-        +1.0, -1.0, // Top Right
+        0.0, 0.0, // Bottom Left
+        1.0, 1.0, // Top Right
     }
 
     vertices := [?]f32{
@@ -187,6 +187,7 @@ draw_quad :: proc(
     ctx.draw_calls += 1
 }
 
+
 draw_quad_points :: proc(
     position: Vec2,
     points: []f32,
@@ -214,6 +215,24 @@ draw_quad_points :: proc(
 
     gl.DrawArrays(gl.TRIANGLES, 0, i32(len(points) / 3))
     ctx.draw_calls += 1
+}
+
+draw_quad_size :: proc(
+    position: Vec2,
+    size: Vec2,
+    rotation: f32 = 0.0,
+    color: Color = Color{1.0, 1.0, 1.0, 1.0},
+    scale: Vec2 = Vec2 {1, 1},
+) {
+    points := []f32{
+        0, 0, 0,
+        size.x, size.y, 0,
+        size.x, 0, 0,
+        0, 0, 0,
+        0, size.y, 0,
+        size.x, size.y, 0,
+    }
+    draw_quad_points(position, points, rotation, color, scale)
 }
 
 draw_string_absolute :: proc(
@@ -263,14 +282,16 @@ draw_string_absolute :: proc(
             true,
         )
 
-        uv_tl := Vec2{quad.s0, quad.t1}
-        uv_br := Vec2{quad.s1, quad.t0}
+        uv_tl := Vec2{quad.s0, quad.t0}
+        uv_br := Vec2{quad.s1, quad.t1}
 
         x0 := quad.x0
         y0 := (ypos - (ypos + quad.y1))
+        // y0 := quad.y0
 
         x1 := quad.x1
         y1 := (ypos - (ypos + quad.y0))
+        // y1 := quad.y1
 
         vertices := [?]f32{
             x0, y1, uv_tl.x, uv_br.y, // Bottom Left
